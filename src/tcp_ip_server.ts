@@ -75,7 +75,7 @@ const server=net.createServer(socket=>{
             ack_recieved=false
             const timeout=setTimeout(()=>{
                 if(!ack_recieved && last_packet){
-                    socket.write(JSON.stringify(last_packet)+'/r/n')
+                    socket.write(JSON.stringify(last_packet)+'\r\n')
                 }
             },6000)
             //setting the timeout with ack
