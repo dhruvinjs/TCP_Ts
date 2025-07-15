@@ -10,15 +10,27 @@ type Packet ={
     payload:string,
     checksum:string
 }
-const server=net.createServer(socket=>{
-    let ack_counter=0
+    
+let ack_counter=0
     let syn_counter=0
     let ack_recieved=false
     let packets:Packet[]=[]
     let last_packet:Packet | null = null
-    let timeout:NodeJS.Timeout | null = null  
-    console.log("Client connected")
+    let packet_timeout_map=new Map<number,NodeJS.Timeout>()
 
+function cleanUpClient(){
+    for(const values in packet_timeout_map.values()){
+        clearTimeout(values)
+    }
+    //cleared timeout as well as acks
+    packet_timeout_map.clear()
+    ack_recieved=false
+    last_packet=null
+    console.log(`Clean up client called`);
+}
+
+const server=net.createServer(socket=>{
+    console.log("Client connected")
     socket.setEncoding("utf-8")
     //3-way handshake simulation
     socket.setTimeout(5000,()=>{
@@ -61,46 +73,40 @@ const server=net.createServer(socket=>{
             last_packet=packet
             socket.write(JSON.stringify(packet)+'\r\n')
             ack_recieved=false
+            const timeout=setTimeout(()=>{
+                if(!ack_recieved && last_packet){
+                    socket.write(JSON.stringify(last_packet)+'/r/n')
+                }
+            },6000)
+            //setting the timeout with ack
+            packet_timeout_map.set(last_packet.ack,timeout)
+            
             ack_counter++
             syn_counter++
-
-            //clearing the old timeout and setting it new
-            if(timeout) clearTimeout(timeout)
-            timeout=setTimeout(()=>{
-                if(!ack_recieved && last_packet){
-                    console.log("sending packet again")
-                    socket.write(JSON.stringify(last_packet)+'\r\n')
-                }
-            },5000)
         }
-
-        if(message.type==="ack"){
-            const ack_number=message.ack_number
-            if(ack_number === last_packet?.ack){
+           if(message.type==="ack"){
+                const ack=message.ack_number
+                const timeout=packet_timeout_map.get(ack)
+                if(timeout){
+                    clearTimeout(timeout)
+                    console.log(`ack_recieved:${ack} timeout cleared`);
+                }else{
+                    console.log(`Unknown ack_recieved:${ack}`);
+                }
                 ack_recieved=true
-                console.log("ack_recieved successfully");
-                if(timeout) clearTimeout(timeout)
-            }
-            else{
-                ack_recieved=false
-                if(timeout)clearTimeout(timeout)
-                timeout=setTimeout(()=>{
-                    console.log("wrong ack")
-                if(!ack_recieved && last_packet){
-                    const wrong_ack_message={
-                        type:"WRONG ACK_RECIEVED",
-                        message:"Sending the packet again"
-                    }
-                     socket.write(JSON.stringify(wrong_ack_message)+'\r\n')
-                     socket.write(JSON.stringify(last_packet)+"\r\n")   
-                }
-                },2000)
-            }
-        }
+           }
 
 
     })
-    socket.on("end",()=>console.log("Client Disconnected"))
+    socket.on("end",()=>{
+        console.log("Client Disconnected")
+        cleanUpClient()
+    })
+
+    socket.on("error",(err)=>{
+        console.log(err)
+        cleanUpClient()
+    })
 })
  
 
